@@ -1,4 +1,3 @@
-
 import sys
 import os
 import calendar
@@ -8,9 +7,11 @@ import time
 from datetime import date, datetime, timedelta
 import connection as db
 
-# USER IDENTITY & ROLE AUTHENTICATION 
+# USER IDENTITY and ABILITY
 
 CURRENT_USER = "Planner"
+
+
 def select_user_identity():
     global CURRENT_USER
     while True:
@@ -100,7 +101,7 @@ def pick_role():
         print("  Logged in as Viewer.")
         return "viewer"
 
-# EVENTS
+# EVENT CREATION & CATEGORIES 
 
 class Event:
     def __init__(self, event_id, title, event_date, event_time, details, status, category_name, owner_name="Planner"):
@@ -189,15 +190,12 @@ def manage_categories():
     print(f"  Category '{name}' added!")
 
 
-    #DATE AND TIME  VALIDATION 
-
+# DATE  AND TIME VALIDATION 
 def is_valid_date(text):
     parts = text.split("-")
     if len(parts) != 3:
         return False
-    year_part = parts[0]
-    month_part = parts[1]
-    day_part = parts[2]
+    year_part, month_part, day_part = parts[0], parts[1], parts[2]
     if not year_part.isdigit() or not month_part.isdigit() or not day_part.isdigit():
         return False
     if len(year_part) != 4:
@@ -221,13 +219,12 @@ def format_time(text):
 
 def is_valid_time(text):
     cleaned = text.strip().lower()
-    if cleaned in ["all day", ""]:
+    if cleaned in ["all", "all day", "allday", "all-day", ""]:
         return True
     parts = cleaned.split(":")
     if len(parts) != 2:
         return False
-    hour_part = parts[0]
-    minute_part = parts[1]
+    hour_part, minute_part = parts[0], parts[1]
     if not hour_part.isdigit() or not minute_part.isdigit():
         return False
     if int(hour_part) < 0 or int(hour_part) > 23:
