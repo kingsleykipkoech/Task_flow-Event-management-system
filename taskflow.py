@@ -59,3 +59,66 @@ def edit_event():
         print(f"  Participants added to: {title}")
     else:
         print("  Nothing changed.")
+
+
+def delete_event():
+    print("")
+    show_event_list()
+    print("")
+    event_id = input("  Enter event id to delete: ").strip()
+    if not event_id.isdigit():
+        print("  Invalid id.")
+        return
+    deleted_count = db.delete_event(event_id)
+    if deleted_count == 0:
+        print("  No event with that id.")
+    else:
+        print("  Deleted.")
+
+def import_ics():
+    print("")
+    source = input("  Enter .ics file path: ").strip()
+    if source == "":
+        return
+
+    if not os.path.exists(source):
+        print("  File not found.")
+        return
+    try:
+        with open(source, encoding='utf-8') as ics_file:
+            all_lines = ics_file.readlines()
+    except Exception:
+        print("  Could not read file.")
+        return
+
+    imports_category_id = db.get_category_id("Imports")
+    title = ""
+    event_date = ""
+    event_time = "00:00"
+    imported_count = 0
+
+    for raw_line in all_lines:
+        line = raw_line.strip()
+
+        if line.startswith("SUMMARY:"):
+            title = line[8:]
+
+        elif line.startswith("DTSTART"):
+            value = line.split(":")[-1]
+            date_part = value[0:8]
+            if len(date_part) == 8 and date_part.isdigit():
+                event_date = date_part[0:4] + "-" + date_part[4:6] + "-" + date_part[6:8]
+            if "T" in value:
+                time_part = value.split("T")[1]
+                if len(time_part) >= 4 and time_part[0:4].isdigit():
+                    event_time = time_part[0:2] + ":" + time_part[2:4]
+
+        elif line.startswith("END:VEVENT"):
+            if title != "" and event_date != "":
+                db.add_event(title, event_date, event_time, "Imported from calendar", imports_category_id, CURRENT_USER)
+                imported_count = imported_count + 1
+            title = ""
+            event_date = ""
+            event_time = "00:00"
+
+    print(f"  Imported {imported_count} event(s).")
