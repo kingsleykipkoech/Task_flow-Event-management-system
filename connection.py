@@ -1,0 +1,232 @@
+import os
+import sys
+import mysql.connector
+
+try:
+    connection = mysql.connector.connect(
+        host="mysql-321c1333-alustudent-a6c3.c.aivencloud.com",
+        port=21755,
+        user="avnadmin",
+        password="AVNS_bI1GHgU3lywk6XbCIWa",
+        database="defaultdb",
+        ssl_disabled=False
+    )
+except mysql.connector.Error as e:
+    print(f"error: {e}")
+    sys.exit(1)
+
+cursor = connection.cursor(buffered=True)
+
+
+def setup():
+    folder = os.path.dirname(os.path.abspath(__file__))
+    sql_file = os.path.join(folder, "databse.sql")
+    if os.path.exists(sql_file):
+        with open(sql_file) as file:
+            full_sql = file.read()
+        for query in full_sql.split(";"):
+            raw_text = query.strip()
+            lines = [line for line in raw_text.splitlines() if not line.strip().startswith("--")]
+            clean_query = "\n".join(lines).strip()
+            if clean_query != "" and clean_query.upper().startswith("CREATE"):
+                cursor.execute(clean_query)
+    try:
+        cursor.execute("CREATE TABLE IF NOT EXISTS members (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50) UNIQUE)")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE events MODIFY COLUMN event_time VARCHAR(20)")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE events ADD COLUMN created_by VARCHAR(50) DEFAULT 'Planner'")
+    except:
+        pass
+    connection.commit()
+
+    cursor.execute("SELECT COUNT(*) FROM categories")
+    count = cursor.fetchone()[0]
+    if count == 0:
+        default_categories = ["Classes", "Assignments", "Personal", "Others", "Imports"]
+        for category_name in default_categories:
+            cursor.execute("INSERT INTO categories (name) VALUES (%s)", (category_name,))
+        connection.commit()
+
+    cursor.execute("SELECT COUNT(*) FROM members")
+    m_count = cursor.fetchone()[0]
+    if m_count == 0:
+        default_members = ["Kingsley", "Felix", "Vanessa", "Rita", "Gabriel"]
+        for member_name in default_members:
+            cursor.execute("INSERT INTO members (name) VALUES (%s)", (member_name,))
+        connection.commit()
+
+
+def get_all_members():
+    cursor.execute("SELECT id, name FROM members ORDER BY id")
+    return cursor.fetchall()
+
+
+def add_member(name):
+    try:
+        cursor.execute("INSERT INTO members (name) VALUES (%s)", (name,))
+        connection.commit()
+    except:
+        pass
+
+
+def delete_member(name):
+    cursor.execute("DELETE FROM members WHERE name = %s", (name,))
+    connection.commit()
+    return cursor.rowcount
+
+
+def get_all_categories():
+    cursor.execute("SELECT id, name FROM categories ORDER BY id")
+    return cursor.fetchall()
+
+
+def get_category_id(name):
+    cursor.execute("SELECT id FROM categories WHERE name = %s", (name,))
+    row = cursor.fetchone()
+    if row:
+        return row[0]
+    cursor.execute("INSERT INTO categories (name) VALUES (%s)", (name,))
+    connection.commit()
+    return cursor.lastrowid
+
+
+def add_category(name):
+    cursor.execute("INSERT INTO categories (name) VALUES (%s)", (name,))
+    connection.commit()
+
+
+def add_event(title, event_date, event_time, details, category_id, created_by="Planner"):
+    try:
+        cursor.execute(
+            "INSERT INTO events (title, event_date, event_time, details, status, category_id, created_by) "
+            "VALUES (%s, %s, %s, %s, 'pending', %s, %s)",
+            (title, event_date, event_time, details, category_id, created_by)
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        cursor.execute(
+            "INSERT INTO events (title, event_date, event_time, details, status, category_id, created_by) "
+            "VALUES (%s, %s, %s, %s, 'pending', %s, %s)",
+            (title, event_date, event_time, details, category_id, created_by)
+        )
+        connection.commit()
+    return cursor.lastrowid
+
+
+def get_user_events(owner_name):
+    if not owner_name or owner_name.lower() == "planner":
+        return get_all_events()
+    pattern = "%" + owner_name.lower() + "%"
+    cursor.execute(
+        "SELECT e.id, e.title, e.event_date, e.event_time, e.details, e.status, c.name, e.created_by "
+        "FROM events e "
+        "LEFT JOIN categories c ON e.category_id = c.id "
+        "WHERE LOWER(e.created_by) LIKE %s "
+        "ORDER BY e.event_date, e.event_time",
+        (pattern,)
+    )
+    return cursor.fetchall()
+
+
+def get_all_events():
+    cursor.execute(
+        "SELECT e.id, e.title, e.event_date, e.event_time, e.details, e.status, c.name, e.created_by "
+        "FROM events e "
+        "LEFT JOIN categories c ON e.category_id = c.id "
+        "ORDER BY e.event_date, e.event_time"
+    )
+    return cursor.fetchall()
+
+
+def search_events(keyword):
+    pattern = "%" + keyword + "%"
+    cursor.execute(
+        "SELECT e.id, e.title, e.event_date, e.event_time, e.details, e.status, c.name, e.created_by "
+        "FROM events e "
+        "LEFT JOIN categories c ON e.category_id = c.id "
+        "WHERE LOWER(e.title) LIKE %s OR LOWER(e.details) LIKE %s "
+        "ORDER BY e.event_date, e.event_time",
+        (pattern, pattern)
+    )
+    return cursor.fetchall()
+
+
+def get_event_title(event_id):
+    cursor.execute("SELECT title FROM events WHERE id = %s", (event_id,))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def get_events_on_dates(date1, date2):
+    cursor.execute(
+        "SELECT id, title, event_date, event_time, status, created_by "
+        "FROM events "
+        "WHERE event_date = %s OR event_date = %s",
+        (date1, date2)
+    )
+    return cursor.fetchall()
+
+
+def mark_event_done(event_id):
+    cursor.execute("UPDATE events SET status = 'done' WHERE id = %s", (event_id,))
+    connection.commit()
+    return cursor.rowcount
+
+
+def delete_event(event_id):
+    cursor.execute("DELETE FROM attendees WHERE event_id = %s", (event_id,))
+    cursor.execute("DELETE FROM events WHERE id = %s", (event_id,))
+    connection.commit()
+    return cursor.rowcount
+
+
+def add_attendee(event_id, email):
+    cursor.execute("INSERT INTO attendees (event_id, email) VALUES (%s, %s)", (event_id, email))
+    connection.commit()
+
+
+def get_attendee_emails(event_id):
+    cursor.execute("SELECT email FROM attendees WHERE event_id = %s", (event_id,))
+    rows = cursor.fetchall()
+    return [row[0] for row in rows]
+
+
+def get_all_owners():
+    cursor.execute("SELECT DISTINCT created_by FROM events WHERE created_by IS NOT NULL AND created_by != '' ORDER BY created_by")
+    rows = cursor.fetchall()
+    return [row[0] for row in rows]
+
+
+def get_events_by_owner(owner_name):
+    pattern = "%" + owner_name.lower() + "%"
+    cursor.execute(
+        "SELECT e.id, e.title, e.event_date, e.event_time, e.details, e.status, c.name, e.created_by "
+        "FROM events e "
+        "LEFT JOIN categories c ON e.category_id = c.id "
+        "WHERE LOWER(e.created_by) LIKE %s "
+        "ORDER BY e.event_date, e.event_time",
+        (pattern,)
+    )
+    return cursor.fetchall()
+
+
+def get_busy_days_by_owner(year_month_prefix, owner_name):
+    pattern = "%" + owner_name.lower() + "%"
+    cursor.execute(
+        "SELECT event_date FROM events WHERE event_date LIKE %s AND LOWER(created_by) LIKE %s",
+        (year_month_prefix + "-%", pattern)
+    )
+    rows = cursor.fetchall()
+    return [int(row[0][8:10]) for row in rows]
+
+
+def get_busy_days(year_month_prefix):
+    cursor.execute("SELECT event_date FROM events WHERE event_date LIKE %s", (year_month_prefix + "-%",))
+    rows = cursor.fetchall()
+    return [int(row[0][8:10]) for row in rows]
